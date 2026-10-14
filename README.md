@@ -43,7 +43,7 @@ Controls: keyboard or joystick (port 2).
 ## Project history
 
 - **2018** — Core game programmed in CBM prg Studio
-- **2026** — Migrated / finished for release with VS Code + 64tass, with AI-assisted coding and some AI-assisted graphics
+- **2026** — Migrated / finished for release with VS Code + 64tass, with AI-assisted coding and some AI-assisted graphics (game cover)
 
 Theme inspired by the announcement of a U.S. Space Force.
 
