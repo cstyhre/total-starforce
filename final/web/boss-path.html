@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Boss path editor — Total Star Force</title>
+  <style>
+    :root {
+      --bg: #0a0e18;
+      --panel: #121826;
+      --text: #e8eef8;
+      --muted: #8b97ad;
+      --accent: #3d7ea6;
+      --line: #5eb0e0;
+      --point: #e8c547;
+      --center: #e85d5d;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background:
+        radial-gradient(ellipse 70% 40% at 40% 0%, #1a3050 0%, transparent 50%),
+        var(--bg);
+      color: var(--text);
+      padding: 1.25rem;
+    }
+    h1 {
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin: 0 0 0.35rem;
+      letter-spacing: 0.02em;
+    }
+    .sub {
+      color: var(--muted);
+      font-size: 0.9rem;
+      margin: 0 0 1.25rem;
+      max-width: 40rem;
+      line-height: 1.45;
+    }
+    .layout {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1.25rem;
+      align-items: flex-start;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid #1e2a3d;
+      padding: 0.9rem 1rem;
+    }
+    canvas {
+      display: block;
+      background: #070b12;
+      cursor: crosshair;
+      image-rendering: pixelated;
+    }
+    label {
+      display: block;
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-bottom: 0.2rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.6rem;
+      align-items: flex-end;
+      margin-bottom: 0.75rem;
+    }
+    input[type="number"], select, textarea {
+      background: #0a101a;
+      border: 1px solid #2a3a52;
+      color: var(--text);
+      padding: 0.4rem 0.5rem;
+      font: inherit;
+    }
+    input[type="number"] { width: 4.5rem; }
+    button {
+      background: var(--accent);
+      color: #fff;
+      border: 0;
+      padding: 0.45rem 0.75rem;
+      cursor: pointer;
+      font: inherit;
+    }
+    button:hover { filter: brightness(1.1); }
+    button.ghost {
+      background: transparent;
+      border: 1px solid #2a3a52;
+      color: var(--text);
+    }
+    textarea {
+      width: min(36rem, 100%);
+      height: 16rem;
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: 0.8rem;
+      line-height: 1.35;
+      resize: vertical;
+    }
+    .hint { font-size: 0.8rem; color: var(--muted); margin-top: 0.5rem; }
+    .points {
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: 0.8rem;
+      color: var(--muted);
+      max-height: 8rem;
+      overflow: auto;
+      margin: 0.5rem 0 0;
+      white-space: pre;
+    }
+  </style>
+</head>
+<body>
+  <h1>Boss path editor</h1>
+  <p class="sub">
+    Klicka i canvas eller skriv X/Y och lägg till waypoint.
+    Välj boss 1/2/3, rita path, kopiera ASM och klistra över
+    <code>BossPath0X/Y</code>, <code>BossPath1X/Y</code> eller <code>BossPath2X/Y</code> i
+    <code>game.asm</code>. Avstånd = form; fart = <code>bossPathSpeed</code> ($20≈10s/varv).
+  </p>
+
+  <div class="layout">
+    <div class="panel">
+      <canvas id="view" width="512" height="468"></canvas>
+      <p class="hint">
+        Röd = center. Gul = waypoints. Cyan = loop.
+        Grön zon = där spelaren ofta är (neråt). Streck = max Y från center (±127 signed delta).
+        Full playfield Y 0–240 (player max ≈ 233).
+      </p>
+    </div>
+
+    <div class="panel">
+      <div class="row">
+        <div>
+          <label for="cx">Center X</label>
+          <input id="cx" type="number" min="0" max="255" value="120" />
+        </div>
+        <div>
+          <label for="cy">Center Y</label>
+          <input id="cy" type="number" min="0" max="255" value="72" />
+        </div>
+        <div>
+          <label for="preset">Boss preset</label>
+          <select id="preset">
+            <option value="0">Boss 1 ($78,$48)</option>
+            <option value="1">Boss 2 ($6c,$48)</option>
+            <option value="2">Boss 3 ($78,$48)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label for="nx">Nästa X</label>
+          <input id="nx" type="number" min="0" max="255" value="120" />
+        </div>
+        <div>
+          <label for="ny">Nästa Y</label>
+          <input id="ny" type="number" min="0" max="255" value="72" />
+        </div>
+        <button type="button" id="add">Lägg till punkt</button>
+        <button type="button" class="ghost" id="undo">Ångra</button>
+        <button type="button" class="ghost" id="clear">Rensa</button>
+      </div>
+
+      <div class="row">
+        <button type="button" id="loadFig8">Ladda nuvarande ∞</button>
+        <button type="button" id="export">Uppdatera ASM</button>
+        <button type="button" class="ghost" id="copy">Kopiera</button>
+      </div>
+
+      <label for="asm">ASM (klistra in i game.asm)</label>
+      <textarea id="asm" spellcheck="false"></textarea>
+      <p class="hint" id="status"></p>
+      <pre class="points" id="list"></pre>
+    </div>
+  </div>
+
+  <script>
+    // Full playfield (sprite coords). Matches game.asm playerYMax ≈ 233.
+    const WORLD = { x0: 0, y0: 0, x1: 255, y1: 240 };
+    const PLAYER_Y_MAX = 233;
+    const PLAYER_Y_MIN = 52;
+    const PLAYER_HIDE_TOP = 179; // ~playerEnterY — typical lower play area
+    const STEPS = 64;
+    const BOSS_CENTERS = [
+      { x: 0x78, y: 0x48 },
+      { x: 0x6c, y: 0x48 },
+      { x: 0x78, y: 0x48 },
+    ];
+
+    // Current figure-8 tables from game.asm (absolute = center + delta)
+    const FIG8_DX = [
+      0,4,8,12,15,19,22,25,28,31,33,35,37,38,39,40,
+      40,40,39,38,37,35,33,31,28,25,22,19,15,12,8,4,
+      0,-4,-8,-12,-15,-19,-22,-25,-28,-31,-33,-35,-37,-38,-39,-40,
+      -40,-40,-39,-38,-37,-35,-33,-31,-28,-25,-22,-19,-15,-12,-8,-4,
+    ];
+    const FIG8_DY = [
+      0,2,5,7,8,10,11,12,12,12,11,10,8,7,5,2,
+      0,-2,-5,-7,-8,-10,-11,-12,-12,-12,-11,-10,-8,-7,-5,-2,
+      0,2,5,7,8,10,11,12,12,12,11,10,8,7,5,2,
+      0,-2,-5,-7,-8,-10,-11,-12,-12,-12,-11,-10,-8,-7,-5,-2,
+    ];
+
+    const canvas = document.getElementById("view");
+    const ctx = canvas.getContext("2d");
+    const el = (id) => document.getElementById(id);
+
+    /** @type {{x:number,y:number}[]} absolute sprite coords */
+    let points = [];
+    let animT = 0;
+
+    function center() {
+      return {
+        x: clamp(Number(el("cx").value) | 0, 0, 255),
+        y: clamp(Number(el("cy").value) | 0, 0, 255),
+      };
+    }
+
+    function clamp(v, a, b) {
+      return Math.max(a, Math.min(b, v));
+    }
+
+    function toCanvas(wx, wy) {
+      const sx = canvas.width / (WORLD.x1 - WORLD.x0);
+      const sy = canvas.height / (WORLD.y1 - WORLD.y0);
+      return {
+        x: (wx - WORLD.x0) * sx,
+        y: (wy - WORLD.y0) * sy,
+      };
+    }
+
+    function fromCanvas(cx, cy) {
+      const sx = (WORLD.x1 - WORLD.x0) / canvas.width;
+      const sy = (WORLD.y1 - WORLD.y0) / canvas.height;
+      return {
+        x: clamp(Math.round(WORLD.x0 + cx * sx), 0, 255),
+        y: clamp(Math.round(WORLD.y0 + cy * sy), 0, 255),
+      };
+    }
+
+    function pathLength(pts) {
+      if (pts.length < 2) return 0;
+      let len = 0;
+      for (let i = 0; i < pts.length; i++) {
+        const a = pts[i];
+        const b = pts[(i + 1) % pts.length];
+        len += Math.hypot(b.x - a.x, b.y - a.y);
+      }
+      return len;
+    }
+
+    /** Evenly sample closed polyline into STEPS absolute points */
+    function sampleLoop(pts) {
+      if (pts.length === 0) return [];
+      if (pts.length === 1) {
+        return Array.from({ length: STEPS }, () => ({ ...pts[0] }));
+      }
+      const total = pathLength(pts);
+      if (total < 1e-6) {
+        return Array.from({ length: STEPS }, () => ({ ...pts[0] }));
+      }
+      const out = [];
+      for (let s = 0; s < STEPS; s++) {
+        let dist = (s / STEPS) * total;
+        for (let i = 0; i < pts.length; i++) {
+          const a = pts[i];
+          const b = pts[(i + 1) % pts.length];
+          const seg = Math.hypot(b.x - a.x, b.y - a.y);
+          if (dist <= seg || i === pts.length - 1) {
+            const t = seg < 1e-6 ? 0 : dist / seg;
+            out.push({
+              x: Math.round(a.x + (b.x - a.x) * t),
+              y: Math.round(a.y + (b.y - a.y) * t),
+            });
+            break;
+          }
+          dist -= seg;
+        }
+      }
+      return out;
+    }
+
+    function toDeltas(samples) {
+      const c = center();
+      return samples.map((p) => ({
+        dx: clamp(p.x - c.x, -128, 127),
+        dy: clamp(p.y - c.y, -128, 127),
+      }));
+    }
+
+    function fmtCharRow(vals) {
+      const lines = [];
+      for (let i = 0; i < vals.length; i += 16) {
+        const chunk = vals.slice(i, i + 16);
+        lines.push(
+          "        .char   " +
+            chunk.map((v) => (v < 0 ? String(v) : String(v))).join(",")
+        );
+      }
+      return lines.join("\n");
+    }
+
+    function buildAsm() {
+      const samples = sampleLoop(points);
+      if (!samples.length) {
+        return "; Add at least one waypoint\n";
+      }
+      const deltas = toDeltas(samples);
+      const c = center();
+      const dx = deltas.map((d) => d.dx);
+      const dy = deltas.map((d) => d.dy);
+      const bi = Number(el("preset").value) | 0;
+      const label = "BossPath" + bi;
+      return (
+        `; ${label} — ${points.length} waypoints, ${STEPS} steps, center ($${c.x
+          .toString(16)
+          .padStart(2, "0")},$${c.y.toString(16).padStart(2, "0")})\n` +
+        `; Paste .char rows under ${label}X (in X-block) and ${label}Y (in Y-block).\n` +
+        `; Do NOT reorder banks — file layout is Path0X,1X,2X then Path0Y,1Y,2Y.\n` +
+        `; Waypoints (absolute): ${points
+          .map((p) => `[${p.x},${p.y}]`)
+          .join(" -> ")}\n` +
+        `; --- ${label}X ---\n` +
+        fmtCharRow(dx) +
+        `\n; --- ${label}Y ---\n` +
+        fmtCharRow(dy) +
+        `\n`
+      );
+    }
+
+    function refreshAsm() {
+      el("asm").value = buildAsm();
+      const c = center();
+      const clipped = points.filter(
+        (p) => p.y - c.y > 127 || p.y - c.y < -128 || p.x - c.x > 127 || p.x - c.x < -128
+      );
+      let status = points.length
+        ? `${points.length} punkter → ${STEPS} steg`
+        : "Inga punkter än";
+      if (clipped.length) {
+        status +=
+          ` — ${clipped.length} punkt(er) utanför ±127 från center (klipps i export). ` +
+          `Sänk BossCenterY i spelet om du behöver ännu lägre.`;
+      }
+      el("status").textContent = status;
+      el("list").textContent = points.length
+        ? points.map((p, i) => `p${i + 1}  [${p.x}, ${p.y}]`).join("\n")
+        : "";
+    }
+
+    function draw() {
+      const w = canvas.width;
+      const h = canvas.height;
+      ctx.fillStyle = "#070b12";
+      ctx.fillRect(0, 0, w, h);
+
+      const c = center();
+      const cc = toCanvas(c.x, c.y);
+
+      // Player hide / lower playfield band
+      const hideTop = toCanvas(0, PLAYER_HIDE_TOP);
+      const hideBot = toCanvas(0, PLAYER_Y_MAX);
+      ctx.fillStyle = "rgba(46, 120, 72, 0.18)";
+      ctx.fillRect(0, hideTop.y, w, hideBot.y - hideTop.y);
+
+      // grid
+      ctx.strokeStyle = "#152033";
+      ctx.lineWidth = 1;
+      for (let x = 0; x <= 255; x += 32) {
+        const p = toCanvas(x, 0);
+        ctx.beginPath();
+        ctx.moveTo(p.x, 0);
+        ctx.lineTo(p.x, h);
+        ctx.stroke();
+      }
+      for (let y = 0; y <= WORLD.y1; y += 16) {
+        const p = toCanvas(0, y);
+        ctx.beginPath();
+        ctx.moveTo(0, p.y);
+        ctx.lineTo(w, p.y);
+        ctx.stroke();
+      }
+
+      // Signed delta limit (path tables are .char −128..127)
+      const maxY = clamp(c.y + 127, 0, 255);
+      const minY = clamp(c.y - 128, 0, 255);
+      ctx.setLineDash([6, 4]);
+      ctx.strokeStyle = "#8a6a2a";
+      ctx.lineWidth = 1;
+      let lim = toCanvas(0, maxY);
+      ctx.beginPath();
+      ctx.moveTo(0, lim.y);
+      ctx.lineTo(w, lim.y);
+      ctx.stroke();
+      lim = toCanvas(0, minY);
+      ctx.beginPath();
+      ctx.moveTo(0, lim.y);
+      ctx.lineTo(w, lim.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = "#8a6a2a";
+      ctx.font = "11px sans-serif";
+      ctx.fillText("max Y (center+127)", 8, toCanvas(0, maxY).y - 4);
+
+      // Player bottom
+      const pBottom = toCanvas(0, PLAYER_Y_MAX);
+      ctx.strokeStyle = "#3d9a5c";
+      ctx.beginPath();
+      ctx.moveTo(0, pBottom.y);
+      ctx.lineTo(w, pBottom.y);
+      ctx.stroke();
+      ctx.fillStyle = "#3d9a5c";
+      ctx.fillText("player bottom (" + PLAYER_Y_MAX + ")", 8, pBottom.y - 4);
+
+      // sampled path
+      const samples = sampleLoop(points);
+      if (samples.length > 1) {
+        ctx.strokeStyle = "#2a6a8a";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        samples.forEach((p, i) => {
+          const q = toCanvas(p.x, p.y);
+          if (i === 0) ctx.moveTo(q.x, q.y);
+          else ctx.lineTo(q.x, q.y);
+        });
+        ctx.closePath();
+        ctx.stroke();
+      }
+
+      // waypoint polyline
+      if (points.length) {
+        ctx.strokeStyle = varLine();
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        points.forEach((p, i) => {
+          const q = toCanvas(p.x, p.y);
+          if (i === 0) ctx.moveTo(q.x, q.y);
+          else ctx.lineTo(q.x, q.y);
+        });
+        if (points.length > 1) {
+          const q0 = toCanvas(points[0].x, points[0].y);
+          ctx.lineTo(q0.x, q0.y);
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        points.forEach((p, i) => {
+          const q = toCanvas(p.x, p.y);
+          ctx.fillStyle = "#e8c547";
+          ctx.beginPath();
+          ctx.arc(q.x, q.y, 5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = "#fff";
+          ctx.font = "11px sans-serif";
+          ctx.fillText(String(i + 1), q.x + 7, q.y - 7);
+        });
+      }
+
+      // center
+      ctx.fillStyle = "#e85d5d";
+      ctx.beginPath();
+      ctx.arc(cc.x, cc.y, 6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#e85d5d";
+      ctx.font = "11px sans-serif";
+      ctx.fillText("center", cc.x + 8, cc.y + 4);
+
+      // animated marker
+      if (samples.length) {
+        const i = Math.floor(animT) % samples.length;
+        const p = samples[i];
+        const q = toCanvas(p.x, p.y);
+        ctx.fillStyle = "#5eb0e0";
+        ctx.beginPath();
+        ctx.arc(q.x, q.y, 7, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    function varLine() {
+      return getComputedStyle(document.documentElement)
+        .getPropertyValue("--line")
+        .trim() || "#5eb0e0";
+    }
+
+    function addPoint(x, y) {
+      points.push({ x, y });
+      el("nx").value = String(x);
+      el("ny").value = String(y);
+      refreshAsm();
+    }
+
+    function loadFig8() {
+      const c = center();
+      // Sample a few key points of the existing ∞ for editing
+      const idxs = [0, 8, 16, 24, 32, 40, 48, 56];
+      points = idxs.map((i) => ({
+        x: clamp(c.x + FIG8_DX[i], 0, 255),
+        y: clamp(c.y + FIG8_DY[i], 0, 255),
+      }));
+      refreshAsm();
+    }
+
+    el("preset").addEventListener("change", () => {
+      const p = BOSS_CENTERS[Number(el("preset").value) | 0];
+      el("cx").value = String(p.x);
+      el("cy").value = String(p.y);
+      refreshAsm();
+      el("status").textContent =
+        "Exporterar till BossPath" + (Number(el("preset").value) | 0) + "X/Y";
+    });
+
+    ["cx", "cy"].forEach((id) => {
+      el(id).addEventListener("input", refreshAsm);
+    });
+
+    el("add").addEventListener("click", () => {
+      addPoint(
+        clamp(Number(el("nx").value) | 0, 0, 255),
+        clamp(Number(el("ny").value) | 0, 0, 255)
+      );
+    });
+
+    el("undo").addEventListener("click", () => {
+      points.pop();
+      refreshAsm();
+    });
+
+    el("clear").addEventListener("click", () => {
+      points = [];
+      refreshAsm();
+    });
+
+    el("loadFig8").addEventListener("click", loadFig8);
+    el("export").addEventListener("click", refreshAsm);
+    el("copy").addEventListener("click", async () => {
+      refreshAsm();
+      try {
+        await navigator.clipboard.writeText(el("asm").value);
+        el("status").textContent = "Kopierat till clipboard";
+      } catch {
+        el("asm").select();
+        el("status").textContent = "Markera och Ctrl+C";
+      }
+    });
+
+    canvas.addEventListener("click", (ev) => {
+      const r = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / r.width;
+      const scaleY = canvas.height / r.height;
+      const p = fromCanvas(
+        (ev.clientX - r.left) * scaleX,
+        (ev.clientY - r.top) * scaleY
+      );
+      addPoint(p.x, p.y);
+    });
+
+    function tick() {
+      animT += 0.35;
+      draw();
+      requestAnimationFrame(tick);
+    }
+
+    // Start with current figure-8 as editable waypoints
+    loadFig8();
+    tick();
+  </script>
+</body>
+</html>

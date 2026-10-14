@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Total Star Force — playtest</title>
+  <script src="https://vc64web.github.io/js/vc64web_player.js"></script>
+  <style>
+    :root {
+      --bg: #0a0e18;
+      --panel: #121826;
+      --text: #e8eef8;
+      --muted: #8b97ad;
+      --accent: #3d7ea6;
+      --accent-hot: #5eb0e0;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background:
+        radial-gradient(ellipse 80% 50% at 50% -10%, #1a3050 0%, transparent 55%),
+        var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 1.5rem 1rem 3rem;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 1.25rem;
+      max-width: 40rem;
+    }
+
+    header h1 {
+      margin: 0 0 0.35rem;
+      font-size: clamp(1.6rem, 4vw, 2.2rem);
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    header p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.95rem;
+      line-height: 1.45;
+    }
+
+    #stage {
+      width: min(92vw, 720px);
+      background: var(--panel);
+      border: 1px solid #243044;
+      padding: 0.75rem;
+    }
+
+    #preview {
+      display: block;
+      width: 100%;
+      height: auto;
+      aspect-ratio: 4 / 3;
+      background: #061018;
+      cursor: pointer;
+      object-fit: cover;
+    }
+
+    #player_container {
+      background-color: #061018;
+    }
+
+    #vc64web {
+      border: none;
+    }
+
+    .player_icon_btn {
+      background-color: transparent;
+      color: var(--text);
+      margin-right: 12px;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .btn_play {
+      color: var(--accent-hot);
+      cursor: pointer;
+    }
+
+    .hint {
+      margin-top: 1rem;
+      max-width: 40rem;
+      color: var(--muted);
+      font-size: 0.85rem;
+      line-height: 1.5;
+      text-align: center;
+    }
+
+    .hint kbd {
+      font-family: ui-monospace, monospace;
+      font-size: 0.8em;
+      background: #1c2536;
+      border: 1px solid #334055;
+      border-radius: 3px;
+      padding: 0.1em 0.35em;
+    }
+
+    .controls {
+      margin-top: 0.75rem;
+      display: flex;
+      gap: 0.75rem;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    button.start {
+      appearance: none;
+      border: 1px solid var(--accent);
+      background: #16324a;
+      color: var(--text);
+      font: inherit;
+      font-weight: 600;
+      letter-spacing: 0.03em;
+      padding: 0.55rem 1.1rem;
+      cursor: pointer;
+    }
+
+    button.start:hover {
+      background: #1e4260;
+      border-color: var(--accent-hot);
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Total Star Force</h1>
+    <p>C64 playtest via VirtualC64 Web. Klicka på skärmen eller Start för att köra.</p>
+  </header>
+
+  <div id="stage">
+    <!-- Replaced by the emulator iframe when play starts -->
+    <canvas id="preview" width="384" height="272" aria-label="Start Total Star Force"></canvas>
+  </div>
+
+  <div class="controls">
+    <button type="button" class="start" id="btnStart">Start game</button>
+  </div>
+
+  <p class="hint">
+    Styrning: <kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd><kbd>↓</kbd> och <kbd>Space</kbd> (joystick port 2).
+    Sidan måste serveras över HTTP (inte <code>file://</code>) så att
+    <code>totalstarforce.prg</code> kan laddas. Autostart använder
+    <code>SYS 2304</code> (inte <code>RUN</code>). Efter ny build i CBM Prg Studio:
+    kopiera <code>totalstarforce.prg</code> till mappen <code>web/</code>.
+  </p>
+
+  <script>
+    (function () {
+      var preview = document.getElementById("preview");
+      var btn = document.getElementById("btnStart");
+      var started = false;
+
+      // Simple title card on the canvas
+      (function paintPreview() {
+        var ctx = preview.getContext("2d");
+        var w = preview.width;
+        var h = preview.height;
+        ctx.fillStyle = "#061018";
+        ctx.fillRect(0, 0, w, h);
+        for (var i = 0; i < 60; i++) {
+          ctx.fillStyle = i % 5 === 0 ? "#8ab4d4" : "#3a4a60";
+          ctx.fillRect((i * 97) % w, (i * 53) % h, 2, 2);
+        }
+        ctx.fillStyle = "#5eb0e0";
+        ctx.font = "bold 28px Segoe UI, sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText("TOTAL STAR FORCE", w / 2, h / 2 - 12);
+        ctx.fillStyle = "#8b97ad";
+        ctx.font = "14px Segoe UI, sans-serif";
+        ctx.fillText("Click to play", w / 2, h / 2 + 18);
+      })();
+
+      function startPlayer(fromTouch) {
+        if (started) return;
+        started = true;
+
+        var config = {
+          touch: !!fromTouch,
+          openROMS: true,
+          navbar: false,
+          wide: true,
+          border: 0.25,
+          port2: true
+        };
+
+        // Load PRG from same origin (avoids CORS with vc64web.github.io)
+        vc64web_player.samesite_file = {
+          url: "totalstarforce.prg",
+          name: "totalstarforce.prg"
+        };
+
+        // Auto-RUN fails with ?SYNTAX ERROR on this large ML PRG.
+        // After inject, type SYS 2304 ($0900) which starts the game.
+        var inject = vc64web_player.inject_samesite_app_into_iframe.bind(vc64web_player);
+        vc64web_player.inject_samesite_app_into_iframe = async function () {
+          await inject();
+          setTimeout(function () {
+            vc64web_player.exec(async function () {
+              await action("800ms");
+              await action("'sys 2304'=>Enter");
+            });
+          }, 400);
+        };
+
+        vc64web_player.load(
+          preview,
+          encodeURIComponent(JSON.stringify(config))
+        );
+      }
+
+      var touched = false;
+      preview.addEventListener("touchstart", function () {
+        touched = true;
+      }, { passive: true });
+
+      preview.addEventListener("click", function () {
+        var wasTouch = touched;
+        touched = false;
+        startPlayer(wasTouch);
+      });
+
+      btn.addEventListener("click", function () {
+        startPlayer(false);
+      });
+    })();
+  </script>
+</body>
+</html>

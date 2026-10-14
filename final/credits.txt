@@ -1,0 +1,12 @@
+Base game programming made in 2018, finished with AI (Cursor) in 2026
+Theme inspired by president Trump's announcement of a Space force
+
+Tools and resources
+Commodore 64 Programmers reference guide
+CBM prg Studio, later VS Code with 64tass Turbo Assembler.
+VICE: C64 emulator
+Paint
+Petsciiator Web edition
+ChatGPT Images
+
+Special thanks to Ingvar

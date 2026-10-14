@@ -7,6 +7,9 @@
 *.obj
 *.sym
 
+# Keep GoatTracker exports used by build.ps1
+!**/sid/*.prg
+
 # OS / editor junk
 Thumbs.db
 Desktop.ini
